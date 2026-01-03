@@ -1,4 +1,4 @@
-# EVINCE
+# evince
 
 <p align="center">
   <b>Evidence-Verified INtegrity Checker for ESG Claims</b><br>
@@ -9,7 +9,7 @@
 
 ## 🎯 Overview
 
-**EVINCE** là một framework Deep Learning để phát hiện **ESG-Washing** (tẩy xanh) trong báo cáo thường niên của các ngân hàng Việt Nam. Framework sử dụng **PhoBERT** làm encoder ngôn ngữ và tích hợp **Claim-Evidence Linking** để phân tích ở mức độ document.
+**evince** là một framework Deep Learning để phát hiện **ESG-Washing** (tẩy xanh) trong báo cáo thường niên của các ngân hàng Việt Nam. Framework sử dụng **PhoBERT** làm encoder ngôn ngữ và tích hợp **Claim-Evidence Linking** để phân tích ở mức độ document.
 
 ### Tính năng chính
 
@@ -42,8 +42,8 @@ pip install torch transformers pandas tqdm python-dotenv requests
 ### Clone Repository
 
 ```bash
-git clone https://github.com/huypham71/EVINCE.git
-cd EVINCE
+git clone https://github.com/huypham71/evince.git
+cd evince
 ```
 
 ---
@@ -52,7 +52,7 @@ cd EVINCE
 ## 🏗️ Project Structure
 
 ```
-evince_v2/
+evince/
 ├── main.py                 # 🚀 CLI entry point
 ├── README.md               # Documentation
 ├── .env.example            # Environment template
@@ -78,8 +78,8 @@ evince_v2/
 ### 1. Setup Environment
 ```bash
 # Clone repo
-git clone https://github.com/huypham71/EVINCE.git
-cd EVINCE
+git clone https://github.com/huypham71/evince.git
+cd evince
 
 # Install dependencies
 pip install torch transformers pandas tqdm python-dotenv requests scikit-learn
@@ -191,7 +191,7 @@ High Risk Claims: 5
 ### ESG Classification
 
 ```python
-from evince_v2.models import HuggingFaceESGClassifierInference
+from evince.models import HuggingFaceESGClassifierInference
 
 # Load pre-trained model from HuggingFace
 classifier = HuggingFaceESGClassifierInference()
@@ -208,7 +208,7 @@ results = classifier.predict_batch(["Câu 1", "Câu 2", "Câu 3"])
 ### Document Analysis
 
 ```python
-from evince_v2.claim_evidence import DocumentAnalyzer
+from evince.claim_evidence import DocumentAnalyzer
 
 analyzer = DocumentAnalyzer(device="cuda")
 

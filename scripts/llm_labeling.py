@@ -7,7 +7,7 @@ Generate training labels using Qwen3 14B for:
 3. Washing Detection (7 washing types)
 
 Usage:
-    python -m evince_v2.scripts.llm_labeling --sample_size 1000 --output labeled_data.csv
+    python -m evince.scripts.llm_labeling --sample_size 1000 --output labeled_data.csv
 """
 
 import os

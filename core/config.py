@@ -2,13 +2,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from evince_v2 folder or project root
-EVINCE_V2_DIR = Path(__file__).resolve().parent.parent  # evince_v2/
-PROJECT_ROOT = EVINCE_V2_DIR.parent  # esg_pipeline/
+# Load .env from evince folder or project root
+EVINCE_DIR = Path(__file__).resolve().parent.parent  # evince/
+PROJECT_ROOT = EVINCE_DIR.parent  # esg_pipeline/
 
-# Try evince_v2/.env first, then src/.env, then project root
+# Try evince/.env first, then src/.env, then project root
 ENV_PATHS = [
-    EVINCE_V2_DIR / '.env',
+    EVINCE_DIR / '.env',
     PROJECT_ROOT / 'src' / '.env',
     PROJECT_ROOT / '.env'
 ]
