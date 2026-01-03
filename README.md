@@ -48,6 +48,7 @@ cd EVINCE
 
 ---
 
+
 ## 🏗️ Project Structure
 
 ```
@@ -55,104 +56,105 @@ evince_v2/
 ├── main.py                 # 🚀 CLI entry point
 ├── README.md               # Documentation
 ├── .env.example            # Environment template
-├── requirements.txt        # Dependencies
+├── metrics_visualizer.py   # Metrics plotting
 │
 ├── data/                   # 📊 Data directory
-│   ├── all_banks_sentences.csv
-│   └── labeled_sentences.csv
+│   ├── raw_ocr_annual_report.zip # Raw text files
+│   └── all_banks_sentences.csv   # Processed sentences
 │
 ├── models/                 # 🧠 Classification models
-│   ├── esg_topic_classifier.py    # ESG Topic Classifier (6 classes)
-│   └── washing_detector.py        # Washing Detector (7 classes + attention)
-│
 ├── claim_evidence/         # 🔗 Claim-Evidence Linking
-│   ├── sentence_classifier.py     # CLAIM/EVIDENCE/CONTEXT classifier
-│   ├── evidence_matcher.py        # Cross-encoder for claim-evidence scoring
-│   ├── evidence_retriever.py      # Bi-encoder for evidence retrieval
-│   └── document_analyzer.py       # Document-level analysis orchestrator
-│
 ├── training/               # 🏋️ Training pipeline
-│   ├── data_loader.py      # PyTorch datasets
-│   └── train.py            # Training loop with checkpointing
-│
 ├── evaluation/             # 📈 Metrics
-│   └── metrics.py          # F1, Accuracy, ECE, Cohen's Kappa
-│
-├── scripts/                # 📜 Utility scripts
-│   └── llm_labeling.py     # LLM-based pseudo-labeling
-│
-└── core/                   # ⚙️ Core utilities
-    ├── config.py           # Configuration management
-    └── qwen_client.py      # Qwen3 API client
+└── scripts/                # 📜 Utility scripts
+    ├── llm_labeling.py     # LLM-based pseudo-labeling
+    └── process_ocr.py      # OCR data processing
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Interactive Mode (Phân loại từng câu)
+### 1. Setup Environment
+```bash
+# Clone repo
+git clone https://github.com/huypham71/EVINCE.git
+cd EVINCE
+
+# Install dependencies
+pip install torch transformers pandas tqdm python-dotenv requests scikit-learn
+
+# Setup env
+cp .env.example .env
+```
+
+### 2. Prepare Data
+Nếu bạn có file zip chứa các file text OCR (ví dụ: `data/raw_ocr_annual_report.zip`), chạy lệnh sau để chuẩn hóa dữ liệu:
 
 ```bash
-python main.py interactive
->>> Ngân hàng cam kết giảm phát thải carbon
-→ Environmental_Performance (95.2%)
-  Môi trường
+python scripts/process_ocr.py --input data/raw_ocr_annual_report.zip --output data/all_banks_sentences.csv
 ```
+Script sẽ tự động trích xuất Tên ngân hàng, Năm, và Loại báo cáo từ tên file và chia nhỏ thành các câu văn.
 
-### 2. Classify Single Text
+### 3. Generate Labels (Optional)
+Nếu chưa có dữ liệu gán nhãn, sử dụng LLM để tạo nhãn tự động:
 
 ```bash
-python main.py classify --text "Ngân hàng đã giảm 15% lượng CO2 trong năm 2023"
+# Cấu hình Qwen/Gemini trong .env trước
+python main.py label --input data/all_banks_sentences.csv --output data/labeled_data.csv --sample 2000
 ```
 
-**Output:**
-```
-Text: Ngân hàng đã giảm 15% lượng CO2 trong năm 2023
-──────────────────────────────────────────────────
-Label: Environmental_Performance
-Label (VN): Môi trường
-Confidence: 97.35%
-Is ESG: True
+### 4. Train Model 🏋️
+Bạn có thể train lại model trên dữ liệu của mình:
+
+**Train ESG Topic Classifier:**
+```bash
+python main.py train \
+    --model-type esg \
+    --input data/labeled_data.csv \
+    --epochs 5 \
+    --output-dir ./checkpoints/esg
 ```
 
-### 3. Classify CSV File
+**Train Washing Detector:**
+```bash
+python main.py train \
+    --model-type washing \
+    --input data/labeled_data.csv \
+    --epochs 10 \
+    --output-dir ./checkpoints/washing
+```
+
+### 5. Document Analysis (Detection) 🔍
+Phân tích tài liệu để tìm ESG-washing và **xem bằng chứng cụ thể**:
 
 ```bash
-python main.py classify --input data/sentences.csv --output results.csv
+python main.py analyze --input data/all_banks_sentences.csv --bank BIDV --year 2023 --verbose
 ```
 
-### 4. Analyze Document for Washing
-
-```bash
-python main.py analyze --input data/all_banks_sentences.csv --bank BIDV --year 2023
-```
-
-**Output:**
+**Output mẫu:**
 ```
 ============================================================
 DOCUMENT ANALYSIS RESULT
 ============================================================
-Bank: BIDV
-Year: 2023
-Total Sentences: 1,234
+Bank: BIDV | Year: 2023
+Document Washing Index: 0.412
+High Risk Claims: 5
+...
+⚠️  HIGH RISK CLAIMS DETECTED (Washing Evidence):
 ────────────────────────────────────────────────────────────
-Document Washing Index: 0.342
-Total Claims: 156
-Verified Claims: 89
-High Risk Claims: 23
-Average Verification Score: 0.571
-============================================================
-```
 
-### 5. Generate Labels with LLM
+[1] Claim: "Ngân hàng cam kết đạt Net Zero vào năm 2050"
+    Risk Level: HIGH
+    Verification Score: 0.120
+    Evidence Found:
+      (No relevant evidence found)
 
-```bash
-# Configure .env first
-cp .env.example .env
-# Edit .env with your Qwen3 credentials
-
-# Run labeling
-python main.py label --input data/sentences.csv --output data/labeled.csv --sample 1000
+[2] Claim: "Chúng tôi luôn hỗ trợ cộng đồng bị ảnh hưởng thiên tai"
+    Risk Level: MEDIUM
+    Verification Score: 0.450
+    Evidence Found:
+      - [0.48] Ngân hàng đã quyên góp 5 tỷ đồng cho quỹ cứu trợ miền Trung.
 ```
 
 ---
