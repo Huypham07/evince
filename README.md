@@ -39,13 +39,6 @@ CUDA (optional, for GPU acceleration)
 pip install torch transformers pandas tqdm python-dotenv requests
 ```
 
-### Clone Repository
-
-```bash
-git clone https://github.com/Huypham07/evince.git
-cd evince
-```
-
 ---
 
 
@@ -78,7 +71,7 @@ evince/
 ### 1. Setup Environment
 ```bash
 # Clone repo
-git clone https://github.com/huypham71/evince.git
+git clone https://github.com/Huypham07/evince.git
 cd evince
 
 # Install dependencies
