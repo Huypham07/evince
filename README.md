@@ -15,29 +15,12 @@
 
 | Feature | Mô tả |
 |---------|-------|
-| 🏷️ **ESG Classification** | Phân loại câu văn vào 6 chủ đề ESG |
+| 🏷️ **ESG Classification** | Phân loại câu văn vào 6 chủ đề ESG (max 512 tokens) |
 | 🔍 **Washing Detection** | Phát hiện 7 loại ESG-Washing với attention explainability |
 | 📄 **Document Analysis** | Phân tích mức độ washing toàn bộ document |
 | 🔗 **Claim-Evidence Linking** | Liên kết cam kết với bằng chứng hỗ trợ |
+| 📝 **Semantic Chunking** | Xử lý raw OCR thành semantic chunks với token limit |
 | 🤖 **LLM Labeling** | Tạo nhãn tự động với Qwen3 14B |
-
----
-
-## 📦 Installation
-
-### Prerequisites
-
-```bash
-Python >= 3.8
-PyTorch >= 1.10
-CUDA (optional, for GPU acceleration)
-```
-
-### Install Dependencies
-
-```bash
-pip install torch transformers pandas tqdm python-dotenv requests
-```
 
 ---
 
@@ -52,16 +35,20 @@ evince/
 ├── metrics_visualizer.py   # Metrics plotting
 │
 ├── data/                   # 📊 Data directory
-│   ├── raw_ocr_annual_report.zip # Raw text files
-│   └── all_banks_sentences.csv   # Processed sentences
+│   ├── raw_ocr_annual_report.zip  # Raw OCR text files
+│   └── semantic_chunks.csv        # Processed chunks
 │
 ├── models/                 # 🧠 Classification models
+│   ├── esg_topic_classifier.py    # ESG 6-class classifier (512 tokens)
+│   └── washing_detector.py        # Washing 7-class detector
 ├── claim_evidence/         # 🔗 Claim-Evidence Linking
 ├── training/               # 🏋️ Training pipeline
+│   ├── train.py            # Trainer class
+│   └── data_loader.py      # Dataset & DataLoader (512 tokens)
 ├── evaluation/             # 📈 Metrics
 └── scripts/                # 📜 Utility scripts
     ├── llm_labeling.py     # LLM-based pseudo-labeling
-    └── process_ocr.py      # OCR data processing
+    └── process_ocr_semantic.py  # Smart OCR processing
 ```
 
 ---
@@ -81,30 +68,55 @@ pip install torch transformers pandas tqdm python-dotenv requests scikit-learn
 cp .env.example .env
 ```
 
-### 2. Prepare Data
-Nếu bạn có file zip chứa các file text OCR (ví dụ: `data/raw_ocr_annual_report.zip`), chạy lệnh sau để chuẩn hóa dữ liệu:
+### 2. Process Raw OCR Data → Semantic Chunks
+
+Nếu bạn có file raw OCR (txt/zip), sử dụng **semantic chunking** để chia thành các đoạn có nghĩa:
 
 ```bash
-python scripts/process_ocr.py --input data/raw_ocr_annual_report.zip --output data/all_banks_sentences.csv
-```
-Script sẽ tự động trích xuất Tên ngân hàng, Năm, và Loại báo cáo từ tên file và chia nhỏ thành các câu văn.
+# Xử lý file đơn
+python main.py process --input data/bctn_2024_raw.txt --output data/chunks.csv
 
-### 3. Generate Labels (Optional)
+# Xử lý zip chứa nhiều file
+python main.py process --input data/raw_ocr_annual_report.zip --output data/all_chunks.csv
+```
+
+**Output CSV sẽ có các cột:**
+- `text`: Nội dung chunk (đảm bảo ≤500 tokens)
+- `section`: Tên section (từ markdown headers `##`)
+- `chunk_type`: `paragraph` hoặc `table`
+- `bank`, `year`, `report_type`: Metadata từ filename
+- `token_count`: Số token thực tế (đếm bằng PhoBERT tokenizer)
+
+> 💡 **Tính năng**: Script sử dụng PhoBERT tokenizer để đếm token chính xác và tự động chia chunk nếu vượt 500 tokens.
+
+### 3. Classify ESG Topics
+
+```bash
+# Classify từ file chunks
+python main.py classify --input data/chunks.csv --output data/classified.csv
+
+# Classify single text
+python main.py classify --text "Ngân hàng cam kết giảm 30% phát thải carbon vào năm 2030"
+```
+
+### 4. Generate Labels with LLM (Optional)
+
 Nếu chưa có dữ liệu gán nhãn, sử dụng LLM để tạo nhãn tự động:
 
 ```bash
 # Cấu hình Qwen/Gemini trong .env trước
-python main.py label --input data/all_banks_sentences.csv --output data/labeled_data.csv --sample 2000
+python main.py label --input data/chunks.csv --output data/labeled.csv --sample 2000
 ```
 
-### 4. Train Model 🏋️
+### 5. Train Model 🏋️
+
 Bạn có thể train lại model trên dữ liệu của mình:
 
 **Train ESG Topic Classifier:**
 ```bash
 python main.py train \
     --model-type esg \
-    --input data/labeled_data.csv \
+    --input data/labeled.csv \
     --epochs 5 \
     --output-dir ./checkpoints/esg
 ```
@@ -113,16 +125,19 @@ python main.py train \
 ```bash
 python main.py train \
     --model-type washing \
-    --input data/labeled_data.csv \
+    --input data/labeled.csv \
     --epochs 10 \
     --output-dir ./checkpoints/washing
 ```
 
-### 5. Document Analysis (Detection) 🔍
+> 📝 **Note**: Models mặc định sử dụng `max_length=512` và `freeze_bert_layers=0` (full fine-tuning) để hiểu tốt ngữ cảnh đoạn văn.
+
+### 6. Document Analysis (Detection) 🔍
+
 Phân tích tài liệu để tìm ESG-washing và **xem bằng chứng cụ thể**:
 
 ```bash
-python main.py analyze --input data/all_banks_sentences.csv --bank BIDV --year 2023 --verbose
+python main.py analyze --input data/classified.csv --bank agribank --year 2024 --verbose
 ```
 
 **Output mẫu:**
@@ -130,7 +145,7 @@ python main.py analyze --input data/all_banks_sentences.csv --bank BIDV --year 2
 ============================================================
 DOCUMENT ANALYSIS RESULT
 ============================================================
-Bank: BIDV | Year: 2023
+Bank: agribank | Year: 2024
 Document Washing Index: 0.412
 High Risk Claims: 5
 ...
@@ -189,13 +204,13 @@ from evince.models import HuggingFaceESGClassifierInference
 # Load pre-trained model from HuggingFace
 classifier = HuggingFaceESGClassifierInference()
 
-# Single prediction
-result = classifier.predict("Ngân hàng cam kết giảm phát thải carbon")
+# Single prediction (supports up to 512 tokens)
+result = classifier.predict("Ngân hàng cam kết giảm phát thải carbon 30% vào năm 2030")
 print(f"Label: {result.predicted_label}")
 print(f"Confidence: {result.confidence:.2%}")
 
 # Batch prediction
-results = classifier.predict_batch(["Câu 1", "Câu 2", "Câu 3"])
+results = classifier.predict_batch(["Đoạn văn 1", "Đoạn văn 2", "Đoạn văn 3"])
 ```
 
 ### Document Analysis
@@ -207,12 +222,30 @@ analyzer = DocumentAnalyzer(device="cuda")
 
 result = analyzer.analyze_document(
     sentences=["Cam kết 1", "Bằng chứng 1", "Cam kết 2"],
-    bank="BIDV",
-    year=2023
+    bank="agribank",
+    year=2024
 )
 
 print(f"Washing Index: {result.document_washing_index:.3f}")
 print(f"High Risk Claims: {result.high_risk_claims}")
+```
+
+### Process Raw OCR
+
+```python
+from evince.scripts.process_ocr_semantic import process_single_file, chunks_to_csv
+
+# Process raw OCR file
+chunks = process_single_file("data/bctn_2024_raw.txt")
+
+# Save to CSV
+chunks_to_csv(chunks, "data/chunks.csv")
+
+# Each chunk has:
+# - text (≤500 tokens)
+# - section, chunk_type
+# - bank, year, report_type
+# - token_count
 ```
 
 ---
@@ -236,9 +269,30 @@ GOOGLE_API_KEY=your_api_key
 
 ## 📚 Pre-trained Models
 
-| Model | HuggingFace Hub | Description |
-|-------|-----------------|-------------|
-| ESG Classifier | `huypham71/esgify_vn_class_weights` | 6-class ESG topic classifier |
+| Model | HuggingFace Hub | Max Tokens | Description |
+|-------|-----------------|------------|-------------|
+| ESG Classifier | `huypham71/esgify_vn_class_weights` | 512 | 6-class ESG topic classifier |
+
+---
+
+## 🔄 Complete Workflow
+
+```bash
+# 1. Process raw OCR → semantic chunks (with token limit)
+python main.py process -i data/bctn_2024_raw.txt -o data/chunks.csv
+
+# 2. Classify ESG topics
+python main.py classify -i data/chunks.csv -o data/classified.csv
+
+# 3. (Optional) Generate labels for training
+python main.py label -i data/chunks.csv -o data/labeled.csv --sample 500
+
+# 4. (Optional) Train custom model
+python main.py train --model-type esg --input data/labeled.csv --epochs 5
+
+# 5. Analyze for washing detection
+python main.py analyze -i data/classified.csv --bank agribank --year 2024
+```
 
 ---
 

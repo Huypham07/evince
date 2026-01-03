@@ -5,6 +5,10 @@ EVINCE: Main Entry Point
 Command-line interface for EVINCE ESG-Washing Detection.
 
 Usage Examples:
+    # Process raw OCR files into semantic chunks
+    python main.py process --input data/bctn_2024_raw.txt --output data/chunks.csv
+    python main.py process --input data/raw_ocr_annual_report.zip --output data/all_chunks.csv
+    
     # Classify single sentence
     python main.py classify --text "Ngân hàng cam kết giảm phát thải carbon"
     
@@ -26,6 +30,43 @@ from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
+
+
+def process_ocr(args):
+    """Process raw OCR files into semantic chunks for ESG classification."""
+    from scripts.process_ocr_semantic import (
+        process_single_file, 
+        process_zip_file, 
+        chunks_to_csv,
+        MAX_TOKENS
+    )
+    
+    print(f"🔍 Processing: {args.input}")
+    print(f"📏 Token limit: {MAX_TOKENS}")
+    
+    if args.input.endswith('.zip'):
+        chunks = process_zip_file(args.input)
+    elif args.input.endswith('.txt'):
+        chunks = process_single_file(args.input)
+    else:
+        print(f"Error: Unsupported file format. Use .txt or .zip")
+        return
+    
+    if not chunks:
+        print("Warning: No chunks extracted!")
+        return
+    
+    # Ensure output directory exists
+    output_path = args.output or "data/semantic_chunks.csv"
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+    
+    chunks_to_csv(chunks, output_path)
+    
+    # Show sample chunks
+    print("\n📝 Sample chunks (with token counts):")
+    for i, chunk in enumerate(chunks[:3]):
+        print(f"\n--- Chunk {i+1} ({chunk.chunk_type}, {chunk.token_count} tokens, section: {chunk.section[:40] if len(chunk.section) > 40 else chunk.section}...) ---")
+        print(chunk.text[:200] + "..." if len(chunk.text) > 200 else chunk.text)
 
 
 def classify_text(args):
@@ -55,12 +96,14 @@ def classify_text(args):
         print(f"Loading data from: {args.input}")
         df = pd.read_csv(args.input)
         
-        if 'sentence' not in df.columns:
-            print("Error: CSV must have 'sentence' column")
+        # Support both 'sentence' and 'text' column names
+        text_col = 'sentence' if 'sentence' in df.columns else 'text'
+        if text_col not in df.columns:
+            print("Error: CSV must have 'sentence' or 'text' column")
             return
         
-        texts = df['sentence'].tolist()
-        print(f"Classifying {len(texts)} sentences...")
+        texts = df[text_col].tolist()
+        print(f"Classifying {len(texts)} texts...")
         
         results = classifier.predict_batch(texts, batch_size=args.batch_size)
         
@@ -94,6 +137,9 @@ def analyze_document(args):
         print(f"Loading data from: {args.input}")
         df = pd.read_csv(args.input)
         
+        # Support both 'sentence' and 'text' column names
+        text_col = 'sentence' if 'sentence' in df.columns else 'text'
+        
         # Filter by bank/year if specified
         if args.bank:
             df = df[df['bank'].str.lower() == args.bank.lower()]
@@ -104,7 +150,7 @@ def analyze_document(args):
             print("No sentences found with given filters")
             return
         
-        sentences = df['sentence'].tolist()
+        sentences = df[text_col].tolist()
         print(f"Analyzing {len(sentences)} sentences...")
         
         result = analyzer.analyze_document(
@@ -183,6 +229,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Process raw OCR files into semantic chunks
+  python main.py process -i data/bctn_2024_raw.txt -o data/chunks.csv
+  
   # Interactive mode
   python main.py interactive
   
@@ -190,17 +239,22 @@ Examples:
   python main.py classify -t "Ngân hàng cam kết giảm phát thải carbon"
   
   # Classify CSV file
-  python main.py classify -i data/sentences.csv -o results.csv
+  python main.py classify -i data/chunks.csv -o results.csv
   
   # Analyze document for washing
-  python main.py analyze -i data/all_banks_sentences.csv --bank BIDV --year 2023
+  python main.py analyze -i data/chunks.csv --bank agribank --year 2024
   
   # Generate labels with LLM
-  python main.py label -i data/sentences.csv -o labeled.csv --sample 1000
+  python main.py label -i data/chunks.csv -o labeled.csv --sample 1000
         """
     )
     
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    
+    # Process command (NEW)
+    process_parser = subparsers.add_parser("process", help="Process raw OCR files into semantic chunks")
+    process_parser.add_argument("-i", "--input", type=str, required=True, help="Input file (txt or zip)")
+    process_parser.add_argument("-o", "--output", type=str, default="data/semantic_chunks.csv", help="Output CSV file")
     
     # Classify command
     classify_parser = subparsers.add_parser("classify", help="Classify ESG topics")
@@ -231,7 +285,9 @@ Examples:
     
     args = parser.parse_args()
     
-    if args.command == "classify":
+    if args.command == "process":
+        process_ocr(args)
+    elif args.command == "classify":
         classify_text(args)
     elif args.command == "analyze":
         analyze_document(args)
@@ -245,3 +301,4 @@ Examples:
 
 if __name__ == "__main__":
     main()
+

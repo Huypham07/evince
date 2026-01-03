@@ -2,6 +2,7 @@
 EVINCE: Washing Detector with Attention
 
 Deep Learning model for ESG-washing detection with explainability via attention.
+Optimized for paragraph-level input with max_length=512 and full fine-tuning.
 
 Washing Types:
 - NOT_WASHING: Genuine ESG claim
@@ -31,6 +32,9 @@ except ImportError:
     TRANSFORMERS_AVAILABLE = False
     print("Warning: transformers not installed.")
 
+
+# Maximum sequence length for paragraph-level input
+MAX_SEQ_LENGTH = 512
 
 # Washing Type Labels
 WASHING_LABELS = [
@@ -89,6 +93,7 @@ class WashingDetector(nn.Module):
     - Attention: Multi-head self-attention (8 heads)
     - Classifier: MLP head with 7 washing types
     
+    Optimized for paragraph-level input with full fine-tuning enabled by default.
     The attention weights can be used to explain which tokens contribute
     most to the washing detection decision.
     
@@ -103,7 +108,7 @@ class WashingDetector(nn.Module):
         num_classes: int = 7,
         num_attention_heads: int = 8,
         dropout_rate: float = 0.3,
-        freeze_bert_layers: int = 0
+        freeze_bert_layers: int = 0  # Default: full fine-tuning for paragraph understanding
     ):
         """
         Initialize Washing Detector.
@@ -113,7 +118,7 @@ class WashingDetector(nn.Module):
             num_classes: Number of washing types (default 7)
             num_attention_heads: Number of attention heads for explainability
             dropout_rate: Dropout probability
-            freeze_bert_layers: Number of BERT layers to freeze
+            freeze_bert_layers: Number of BERT layers to freeze (0 = full fine-tuning)
         """
         super().__init__()
         
@@ -140,7 +145,7 @@ class WashingDetector(nn.Module):
         # Layer normalization after attention
         self.layer_norm = nn.LayerNorm(self.hidden_size)
         
-        # Classification head - deeper MLP for better representation
+        # Classification head - deeper MLP for better paragraph understanding
         self.classifier = nn.Sequential(
             nn.Linear(self.hidden_size, 512),
             nn.ReLU(),
@@ -240,9 +245,11 @@ class WashingDetectorInference:
     - Single and batch prediction
     - Token-level attention highlighting for explainability
     
+    Optimized for paragraph-level input with max_length=512.
+    
     Usage:
         detector = WashingDetectorInference()
-        result = detector.predict("Ngân hàng cam kết phát triển bền vững")
+        result = detector.predict("Ngân hàng cam kết phát triển bền vững...")
     """
     
     def __init__(
@@ -318,15 +325,15 @@ class WashingDetectorInference:
     def predict(
         self,
         text: str,
-        max_length: int = 256,
+        max_length: int = MAX_SEQ_LENGTH,
         return_attention: bool = True
     ) -> WashingDetectionResult:
         """
-        Detect washing for a single sentence.
+        Detect washing for a single text (sentence or paragraph).
         
         Args:
-            text: Sentence in Vietnamese
-            max_length: Maximum sequence length
+            text: Text in Vietnamese (can be sentence or paragraph)
+            max_length: Maximum sequence length (default 512 for paragraphs)
             return_attention: Whether to return highlighted tokens
             
         Returns:
@@ -382,15 +389,15 @@ class WashingDetectorInference:
     def predict_batch(
         self,
         texts: List[str],
-        max_length: int = 256,
+        max_length: int = MAX_SEQ_LENGTH,
         batch_size: int = 32
     ) -> List[WashingDetectionResult]:
         """
-        Detect washing for a batch of sentences.
+        Detect washing for a batch of texts.
         
         Args:
-            texts: List of sentences
-            max_length: Maximum sequence length
+            texts: List of texts (sentences or paragraphs)
+            max_length: Maximum sequence length (default 512)
             batch_size: Batch size for inference
             
         Returns:
@@ -434,7 +441,7 @@ class WashingDetectorInference:
 
 
 def create_washing_detector(
-    freeze_bert_layers: int = 6,
+    freeze_bert_layers: int = 0,
     num_attention_heads: int = 8,
     dropout_rate: float = 0.3
 ) -> WashingDetector:
@@ -442,12 +449,12 @@ def create_washing_detector(
     Factory function to create Washing Detector.
     
     Args:
-        freeze_bert_layers: Number of BERT layers to freeze
+        freeze_bert_layers: Number of BERT layers to freeze (default 0 = full fine-tuning)
         num_attention_heads: Number of attention heads
         dropout_rate: Dropout rate
         
     Returns:
-        WashingDetector model
+        WashingDetector model ready for training
     """
     return WashingDetector(
         freeze_bert_layers=freeze_bert_layers,

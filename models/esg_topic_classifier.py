@@ -2,8 +2,9 @@
 EVINCE: ESG Topic Classifier
 
 PhoBERT-based multi-class classifier for Vietnamese ESG topic detection.
+Optimized for paragraph-level input with max_length=512 and full fine-tuning.
 
-Labels (from huypham71/esgify_vn_class_weights):
+Labels:
 - Environmental_Performance: Môi trường
 - Social_Performance: Xã hội  
 - Governance_Performance: Quản trị
@@ -31,6 +32,9 @@ except ImportError:
 
 # HuggingFace model path
 HUGGINGFACE_ESG_MODEL = "huypham71/esgify_vn_class_weights"
+
+# Maximum sequence length for paragraph-level input
+MAX_SEQ_LENGTH = 512
 
 # ESG Topic Labels (matching HuggingFace model)
 ESG_LABELS = [
@@ -81,7 +85,9 @@ class ESGTopicClassifier(nn.Module):
     Architecture:
     - Encoder: vinai/phobert-base-v2 (768-dim)
     - Dropout: 0.3
-    - Classifier: Linear(768 → 256) → ReLU → Dropout → Linear(256 → 6)
+    - Classifier: Linear(768 → 512) → ReLU → Dropout → Linear(512 → 256) → ReLU → Dropout → Linear(256 → 6)
+    
+    Optimized for paragraph-level input with full fine-tuning enabled by default.
     
     Usage:
         model = ESGTopicClassifier()
@@ -93,7 +99,7 @@ class ESGTopicClassifier(nn.Module):
         model_name: str = "vinai/phobert-base-v2",
         num_classes: int = 6,
         dropout_rate: float = 0.3,
-        freeze_bert_layers: int = 0
+        freeze_bert_layers: int = 0  # Default: full fine-tuning for paragraph understanding
     ):
         """
         Initialize ESG Topic Classifier.
@@ -102,7 +108,7 @@ class ESGTopicClassifier(nn.Module):
             model_name: HuggingFace model identifier
             num_classes: Number of ESG topics (default 6)
             dropout_rate: Dropout probability
-            freeze_bert_layers: Number of BERT layers to freeze (0 = none)
+            freeze_bert_layers: Number of BERT layers to freeze (0 = full fine-tuning)
         """
         super().__init__()
         
@@ -118,12 +124,15 @@ class ESGTopicClassifier(nn.Module):
         if freeze_bert_layers > 0:
             self._freeze_bert_layers(freeze_bert_layers)
         
-        # Classification head
+        # Classification head - deeper MLP for better paragraph understanding
         self.dropout = nn.Dropout(dropout_rate)
         self.classifier = nn.Sequential(
-            nn.Linear(self.hidden_size, 256),
+            nn.Linear(self.hidden_size, 512),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate * 0.5),  # Lower dropout in final layer
             nn.Linear(256, num_classes)
         )
         
@@ -195,10 +204,11 @@ class ESGTopicClassifierInference:
     Inference wrapper for ESG Topic Classifier.
     
     Handles tokenization and converts outputs to ESGClassificationResult.
+    Optimized for paragraph-level input with max_length=512.
     
     Usage:
         classifier = ESGTopicClassifierInference()
-        result = classifier.predict("Ngân hàng cam kết giảm phát thải carbon")
+        result = classifier.predict("Ngân hàng cam kết giảm phát thải carbon...")
     """
     
     def __init__(
@@ -246,14 +256,14 @@ class ESGTopicClassifierInference:
     def predict(
         self,
         text: str,
-        max_length: int = 256
+        max_length: int = MAX_SEQ_LENGTH
     ) -> ESGClassificationResult:
         """
-        Classify ESG topic for a single sentence.
+        Classify ESG topic for a single text (sentence or paragraph).
         
         Args:
-            text: Sentence in Vietnamese
-            max_length: Maximum sequence length
+            text: Text in Vietnamese (can be sentence or paragraph)
+            max_length: Maximum sequence length (default 512 for paragraphs)
             
         Returns:
             ESGClassificationResult with prediction
@@ -284,22 +294,22 @@ class ESGTopicClassifierInference:
             predicted_label_vn=ESG_LABELS_VN[predicted_label],
             probabilities={label: float(probs[i]) for i, label in enumerate(ESG_LABELS)},
             confidence=confidence,
-            is_esg=(predicted_label != "Non-ESG")
+            is_esg=(predicted_label != "Not_ESG_Related")
         )
     
     @torch.no_grad()
     def predict_batch(
         self,
         texts: List[str],
-        max_length: int = 256,
+        max_length: int = MAX_SEQ_LENGTH,
         batch_size: int = 32
     ) -> List[ESGClassificationResult]:
         """
-        Classify ESG topics for a batch of sentences.
+        Classify ESG topics for a batch of texts.
         
         Args:
-            texts: List of sentences
-            max_length: Maximum sequence length
+            texts: List of texts (sentences or paragraphs)
+            max_length: Maximum sequence length (default 512)
             batch_size: Batch size for inference
             
         Returns:
@@ -336,25 +346,25 @@ class ESGTopicClassifierInference:
                     predicted_label_vn=ESG_LABELS_VN[predicted_label],
                     probabilities={label: float(prob[k]) for k, label in enumerate(ESG_LABELS)},
                     confidence=float(prob[predicted_id]),
-                    is_esg=(predicted_label != "Non-ESG")
+                    is_esg=(predicted_label != "Not_ESG_Related")
                 ))
         
         return results
 
 
 def create_esg_classifier(
-    freeze_bert_layers: int = 6,
+    freeze_bert_layers: int = 0,
     dropout_rate: float = 0.3
 ) -> ESGTopicClassifier:
     """
     Factory function to create ESG Topic Classifier.
     
     Args:
-        freeze_bert_layers: Number of BERT layers to freeze (default 6)
+        freeze_bert_layers: Number of BERT layers to freeze (default 0 = full fine-tuning)
         dropout_rate: Dropout rate
         
     Returns:
-        ESGTopicClassifier model
+        ESGTopicClassifier model ready for training
     """
     return ESGTopicClassifier(
         freeze_bert_layers=freeze_bert_layers,
@@ -378,7 +388,7 @@ def load_esg_classifier_from_huggingface(
     
     Usage:
         model, tokenizer = load_esg_classifier_from_huggingface()
-        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
         outputs = model(**inputs)
         predictions = outputs.logits.argmax(dim=-1)
     """
@@ -402,10 +412,11 @@ class HuggingFaceESGClassifierInference:
     Inference wrapper using pre-trained HuggingFace model.
     
     Loads model from huypham71/esgify_vn_class_weights.
+    Optimized for paragraph-level input with max_length=512.
     
     Usage:
         classifier = HuggingFaceESGClassifierInference()
-        result = classifier.predict("Ngân hàng cam kết giảm phát thải carbon")
+        result = classifier.predict("Ngân hàng cam kết giảm phát thải carbon...")
     """
     
     def __init__(
@@ -437,14 +448,14 @@ class HuggingFaceESGClassifierInference:
     def predict(
         self,
         text: str,
-        max_length: int = 256
+        max_length: int = MAX_SEQ_LENGTH
     ) -> ESGClassificationResult:
         """
-        Classify ESG topic for a single sentence.
+        Classify ESG topic for a single text (sentence or paragraph).
         
         Args:
-            text: Sentence in Vietnamese
-            max_length: Maximum sequence length
+            text: Text in Vietnamese
+            max_length: Maximum sequence length (default 512 for paragraphs)
             
         Returns:
             ESGClassificationResult with prediction
@@ -479,11 +490,11 @@ class HuggingFaceESGClassifierInference:
     def predict_batch(
         self,
         texts: List[str],
-        max_length: int = 256,
+        max_length: int = MAX_SEQ_LENGTH,
         batch_size: int = 32
     ) -> List[ESGClassificationResult]:
         """
-        Classify ESG topics for a batch of sentences.
+        Classify ESG topics for a batch of texts.
         """
         results = []
         

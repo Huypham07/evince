@@ -2,9 +2,10 @@
 EVINCE: Data Loader
 
 Data loading and preprocessing for ESG-washing detection.
+Optimized for paragraph-level input with max_length=512.
 
 Features:
-- Load sentences from CSV
+- Load sentences/paragraphs from CSV
 - LLM-based pseudo-labeling with Qwen3
 - Create PyTorch datasets and dataloaders
 """
@@ -25,9 +26,13 @@ except ImportError:
     TRANSFORMERS_AVAILABLE = False
 
 
+# Maximum sequence length for paragraph-level input
+MAX_SEQ_LENGTH = 512
+
+
 @dataclass
 class LabeledSentence:
-    """A labeled sentence for training."""
+    """A labeled sentence/paragraph for training."""
     sentence: str
     esg_label: Optional[str] = None  # E, S, G, Financing, Policy, Non-ESG
     sentence_type: Optional[str] = None  # CLAIM, EVIDENCE, CONTEXT, NON_ESG
@@ -45,7 +50,7 @@ def load_sentences_from_csv(
     random_state: int = 42
 ) -> pd.DataFrame:
     """
-    Load sentences from CSV file with optional filtering.
+    Load sentences/paragraphs from CSV file with optional filtering.
     
     Args:
         csv_path: Path to CSV file
@@ -110,6 +115,8 @@ class ESGDataset(Dataset):
     """
     PyTorch Dataset for ESG classification and washing detection.
     
+    Optimized for paragraph-level input with max_length=512.
+    
     Supports:
     - ESG topic classification (6 classes)
     - Sentence type classification (4 classes)
@@ -121,17 +128,17 @@ class ESGDataset(Dataset):
         sentences: List[str],
         labels: List[int],
         tokenizer_name: str = "vinai/phobert-base-v2",
-        max_length: int = 256,
+        max_length: int = MAX_SEQ_LENGTH,
         task: str = "esg_topic"  # "esg_topic", "sentence_type", "washing"
     ):
         """
         Initialize dataset.
         
         Args:
-            sentences: List of sentence texts
+            sentences: List of sentence/paragraph texts
             labels: List of integer labels
             tokenizer_name: HuggingFace tokenizer name
-            max_length: Maximum sequence length
+            max_length: Maximum sequence length (default 512 for paragraphs)
             task: Task type for logging
         """
         self.sentences = sentences
@@ -180,7 +187,7 @@ class ClaimEvidenceDataset(Dataset):
         evidences: List[str],
         labels: List[int],  # 1 = match, 0 = no match
         tokenizer_name: str = "vinai/phobert-base-v2",
-        max_length: int = 256
+        max_length: int = MAX_SEQ_LENGTH
     ):
         self.claims = claims
         self.evidences = evidences
@@ -223,19 +230,19 @@ def create_esg_dataloader(
     batch_size: int = 32,
     shuffle: bool = True,
     num_workers: int = 0,
-    max_length: int = 256,
+    max_length: int = MAX_SEQ_LENGTH,
     task: str = "esg_topic"
 ) -> DataLoader:
     """
     Create DataLoader for ESG tasks.
     
     Args:
-        sentences: List of sentence texts
+        sentences: List of sentence/paragraph texts
         labels: List of integer labels
         batch_size: Batch size
         shuffle: Whether to shuffle data
         num_workers: Number of data loading workers
-        max_length: Maximum sequence length
+        max_length: Maximum sequence length (default 512 for paragraphs)
         task: Task type
         
     Returns:
@@ -290,3 +297,52 @@ def create_train_val_split(
     val_labels = [labels[i] for i in val_indices]
     
     return train_sentences, train_labels, val_sentences, val_labels
+
+
+def create_data_loaders(
+    sentences: List[str],
+    labels: List[int],
+    batch_size: int = 32,
+    val_ratio: float = 0.1,
+    max_length: int = MAX_SEQ_LENGTH,
+    task: str = "esg_topic"
+) -> Tuple[DataLoader, Optional[DataLoader]]:
+    """
+    Create train and validation DataLoaders from sentences and labels.
+    
+    Args:
+        sentences: List of sentence/paragraph texts
+        labels: List of integer labels
+        batch_size: Batch size
+        val_ratio: Validation set ratio (0 = no validation set)
+        max_length: Maximum sequence length (default 512 for paragraphs)
+        task: Task type
+        
+    Returns:
+        Tuple of (train_loader, val_loader)
+    """
+    if val_ratio > 0:
+        train_sentences, train_labels, val_sentences, val_labels = create_train_val_split(
+            sentences, labels, val_ratio
+        )
+        
+        train_loader = create_esg_dataloader(
+            train_sentences, train_labels,
+            batch_size=batch_size, shuffle=True,
+            max_length=max_length, task=task
+        )
+        
+        val_loader = create_esg_dataloader(
+            val_sentences, val_labels,
+            batch_size=batch_size, shuffle=False,
+            max_length=max_length, task=task
+        )
+        
+        return train_loader, val_loader
+    else:
+        train_loader = create_esg_dataloader(
+            sentences, labels,
+            batch_size=batch_size, shuffle=True,
+            max_length=max_length, task=task
+        )
+        return train_loader, None
