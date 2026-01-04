@@ -151,6 +151,13 @@ class ESGDataset(Dataset):
             raise ImportError("transformers library required")
         
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        
+        # Cache vocab size - PhoBERT uses 64001 vocab
+        self.vocab_size = getattr(self.tokenizer, 'vocab_size', None)
+        if self.vocab_size is None:
+            self.vocab_size = len(self.tokenizer.get_vocab())
+        
+        print(f"✓ Dataset initialized: {len(sentences)} samples, vocab_size={self.vocab_size}, max_length={max_length}")
     
     def __len__(self):
         return len(self.sentences)
@@ -177,8 +184,8 @@ class ESGDataset(Dataset):
         )
         
         # Clamp token IDs to valid vocab range to prevent CUDA errors
-        vocab_size = len(self.tokenizer)
-        input_ids = torch.clamp(encoding["input_ids"].squeeze(0), min=0, max=vocab_size - 1)
+        input_ids = encoding["input_ids"].squeeze(0)
+        input_ids = torch.clamp(input_ids, min=0, max=self.vocab_size - 1)
         
         return {
             "input_ids": input_ids,
