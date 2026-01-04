@@ -324,12 +324,51 @@ def train_model(args):
         print("Error: No valid samples found for training!")
         return
     
-    # Split data
-    val_size = int(len(dataset) * args.val_split)
-    train_size = len(dataset) - val_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    # Stratified Train/Val/Test Split (80/10/10)
+    from sklearn.model_selection import train_test_split
     
-    print(f"✓ Train: {len(train_dataset)}, Val: {len(val_dataset)}")
+    texts = df[text_col].tolist()
+    
+    # First split: 80% train, 20% temp (val+test)
+    train_texts, temp_texts, train_labels, temp_labels = train_test_split(
+        texts, labels_int,
+        test_size=0.2,
+        random_state=42,
+        stratify=labels_int
+    )
+    
+    # Second split: 50% of temp = 10% val, 10% test
+    val_texts, test_texts, val_labels, test_labels = train_test_split(
+        temp_texts, temp_labels,
+        test_size=0.5,
+        random_state=42,
+        stratify=temp_labels
+    )
+    
+    print(f"\n📊 Data Split (Stratified):")
+    print(f"  Train: {len(train_texts)} (80%)")
+    print(f"  Val:   {len(val_texts)} (10%)")
+    print(f"  Test:  {len(test_texts)} (10%)")
+    
+    # Create datasets
+    train_dataset = ESGDataset(
+        sentences=train_texts,
+        labels=train_labels,
+        max_length=args.max_length,
+        task=args.model_type
+    )
+    val_dataset = ESGDataset(
+        sentences=val_texts,
+        labels=val_labels,
+        max_length=args.max_length,
+        task=args.model_type
+    )
+    test_dataset = ESGDataset(
+        sentences=test_texts,
+        labels=test_labels,
+        max_length=args.max_length,
+        task=args.model_type
+    )
     
     # Create data loaders
     train_loader = DataLoader(
@@ -340,6 +379,12 @@ def train_model(args):
     )
     val_loader = DataLoader(
         val_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=False,
+        num_workers=0
+    )
+    test_loader = DataLoader(
+        test_dataset, 
         batch_size=args.batch_size, 
         shuffle=False,
         num_workers=0
@@ -359,6 +404,14 @@ def train_model(args):
     )
     
     trainer.train()
+    
+    # Evaluate on test set
+    print(f"\n📊 Evaluating on Test Set...")
+    test_metrics = trainer.evaluate_loader(test_loader)
+    print(f"  Test Loss: {test_metrics['loss']:.4f}")
+    print(f"  Test Accuracy: {test_metrics['accuracy']:.4f}")
+    if 'f1_macro' in test_metrics:
+        print(f"  Test F1 (Macro): {test_metrics['f1_macro']:.4f}")
     
     print(f"\n✅ Training complete!")
     print(f"📁 Checkpoints saved to: {args.output_dir}")

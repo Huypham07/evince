@@ -193,6 +193,48 @@ class Trainer:
         
         return {"val_loss": val_loss, "val_acc": val_acc}
     
+    @torch.no_grad()
+    def evaluate_loader(self, data_loader) -> Dict[str, float]:
+        """Evaluate on any DataLoader (for test set evaluation)."""
+        self.model.eval()
+        total_loss = 0.0
+        all_preds = []
+        all_labels = []
+        
+        for batch in data_loader:
+            input_ids = batch["input_ids"].to(self.device)
+            attention_mask = batch["attention_mask"].to(self.device)
+            labels = batch["labels"].to(self.device)
+            
+            outputs = self.model(input_ids, attention_mask)
+            
+            if isinstance(outputs, tuple):
+                logits = outputs[0]
+            else:
+                logits = outputs
+            
+            loss = self.criterion(logits, labels)
+            total_loss += loss.item()
+            
+            preds = logits.argmax(dim=-1)
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+        
+        # Calculate metrics
+        from sklearn.metrics import accuracy_score, f1_score
+        
+        loss = total_loss / len(data_loader)
+        accuracy = accuracy_score(all_labels, all_preds)
+        f1_macro = f1_score(all_labels, all_preds, average='macro')
+        f1_weighted = f1_score(all_labels, all_preds, average='weighted')
+        
+        return {
+            "loss": loss,
+            "accuracy": accuracy,
+            "f1_macro": f1_macro,
+            "f1_weighted": f1_weighted
+        }
+    
     def save_checkpoint(self, epoch: int, is_best: bool = False):
         """Save model checkpoint."""
         checkpoint = {
