@@ -158,6 +158,15 @@ class ESGDataset(Dataset):
         sentence = self.sentences[idx]
         label = self.labels[idx]
         
+        # Handle None or invalid sentences
+        if sentence is None or not isinstance(sentence, str):
+            sentence = ""
+        
+        # Clean sentence - remove NaN, special chars that might cause issues
+        sentence = str(sentence).strip()
+        if not sentence:
+            sentence = "[UNK]"
+        
         encoding = self.tokenizer(
             sentence,
             max_length=self.max_length,
@@ -166,8 +175,12 @@ class ESGDataset(Dataset):
             return_tensors="pt"
         )
         
+        # Clamp token IDs to valid vocab range to prevent CUDA errors
+        vocab_size = len(self.tokenizer)
+        input_ids = torch.clamp(encoding["input_ids"].squeeze(0), min=0, max=vocab_size - 1)
+        
         return {
-            "input_ids": encoding["input_ids"].squeeze(0),
+            "input_ids": input_ids,
             "attention_mask": encoding["attention_mask"].squeeze(0),
             "labels": torch.tensor(label, dtype=torch.long)
         }
