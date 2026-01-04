@@ -224,6 +224,116 @@ def interactive_mode(args):
         print("\nGoodbye!")
 
 
+def train_model(args):
+    """Train ESG classifier or Washing detector."""
+    import torch
+    from torch.utils.data import DataLoader, random_split
+    from training.data_loader import ESGDataset
+    from training.train import Trainer
+    
+    print(f"🚀 Training {args.model_type} model")
+    print(f"📂 Input: {args.input}")
+    print(f"📁 Output: {args.output_dir}")
+    
+    # Load data
+    df = pd.read_csv(args.input)
+    
+    # Determine text column
+    text_col = 'text' if 'text' in df.columns else 'sentence'
+    
+    if args.model_type == "esg":
+        # ESG Topic Classification
+        from models import ESGTopicClassifier, LABEL_TO_ID
+        
+        # Filter to valid labels
+        valid_labels = list(LABEL_TO_ID.keys())
+        df = df[df['esg_label'].isin(valid_labels)].reset_index(drop=True)
+        
+        print(f"✓ Loaded {len(df)} samples for ESG classification")
+        print(f"  Label distribution:")
+        for label, count in df['esg_label'].value_counts().items():
+            print(f"    {label}: {count}")
+        
+        # Create dataset
+        dataset = ESGDataset(
+            texts=df[text_col].tolist(),
+            labels=df['esg_label'].tolist(),
+            label_mapping=LABEL_TO_ID,
+            max_length=args.max_length
+        )
+        
+        # Create model
+        model = ESGTopicClassifier(freeze_bert_layers=args.freeze_layers)
+        
+    elif args.model_type == "washing":
+        # Washing Detection
+        from models.washing_detector import WashingDetector, WASHING_LABELS
+        
+        WASHING_TO_ID = {label: i for i, label in enumerate(WASHING_LABELS)}
+        
+        # Filter Non-ESG samples (they shouldn't be in washing training)
+        df = df[df['esg_label'] != 'Non-ESG'].reset_index(drop=True)
+        df = df[df['washing_type'].notna()].reset_index(drop=True)
+        
+        print(f"✓ Loaded {len(df)} samples for Washing detection")
+        print(f"  Washing distribution:")
+        for label, count in df['washing_type'].value_counts().items():
+            print(f"    {label}: {count}")
+        
+        # Create dataset
+        dataset = ESGDataset(
+            texts=df[text_col].tolist(),
+            labels=df['washing_type'].tolist(),
+            label_mapping=WASHING_TO_ID,
+            max_length=args.max_length
+        )
+        
+        # Create model
+        model = WashingDetector(freeze_bert_layers=args.freeze_layers)
+    else:
+        print(f"Error: Unknown model type '{args.model_type}'. Use 'esg' or 'washing'.")
+        return
+    
+    # Split data
+    val_size = int(len(dataset) * args.val_split)
+    train_size = len(dataset) - val_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    
+    print(f"✓ Train: {len(train_dataset)}, Val: {len(val_dataset)}")
+    
+    # Create data loaders
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=True,
+        num_workers=0
+    )
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=False,
+        num_workers=0
+    )
+    
+    # Train
+    print(f"\n🏋️ Training for {args.epochs} epochs...")
+    
+    trainer = Trainer(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        learning_rate=args.learning_rate,
+        num_epochs=args.epochs,
+        output_dir=args.output_dir,
+        device=args.device
+    )
+    
+    trainer.train()
+    
+    print(f"\n✅ Training complete!")
+    print(f"📁 Checkpoints saved to: {args.output_dir}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="EVINCE: ESG-Washing Detection for Vietnamese Banking Reports",
@@ -285,6 +395,19 @@ Examples:
     interactive_parser = subparsers.add_parser("interactive", help="Interactive mode")
     interactive_parser.add_argument("--device", type=str, default="auto", help="Device: cpu, cuda, auto")
     
+    # Train command
+    train_parser = subparsers.add_parser("train", help="Train ESG classifier or Washing detector")
+    train_parser.add_argument("--model-type", type=str, required=True, choices=["esg", "washing"], help="Model type: esg or washing")
+    train_parser.add_argument("-i", "--input", type=str, required=True, help="Input labeled CSV file")
+    train_parser.add_argument("-o", "--output-dir", type=str, default="./checkpoints", help="Output directory for checkpoints")
+    train_parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    train_parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
+    train_parser.add_argument("--learning-rate", type=float, default=2e-5, help="Learning rate")
+    train_parser.add_argument("--max-length", type=int, default=512, help="Max token length")
+    train_parser.add_argument("--val-split", type=float, default=0.1, help="Validation split ratio")
+    train_parser.add_argument("--freeze-layers", type=int, default=0, help="Number of BERT layers to freeze")
+    train_parser.add_argument("--device", type=str, default="auto", help="Device: cpu, cuda, auto")
+    
     args = parser.parse_args()
     
     if args.command == "process":
@@ -297,6 +420,8 @@ Examples:
         generate_labels(args)
     elif args.command == "interactive":
         interactive_mode(args)
+    elif args.command == "train":
+        train_model(args)
     else:
         parser.print_help()
 

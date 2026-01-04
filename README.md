@@ -20,10 +20,10 @@
 | 📄 **Document Analysis** | Phân tích mức độ washing toàn bộ document |
 | 🔗 **Claim-Evidence Linking** | Liên kết cam kết với bằng chứng hỗ trợ |
 | 📝 **Semantic Chunking** | Xử lý raw OCR thành semantic chunks với token limit |
-| 🤖 **LLM Labeling** | Tạo nhãn tự động với Qwen3 14B |
+| 🤖 **LLM Labeling** | Tạo nhãn tự động với Gemini, Bedrock, hoặc Qwen3 |
+| 🏋️ **Training Pipeline** | Train custom models với labeled data |
 
 ---
-
 
 ## 🏗️ Project Structure
 
@@ -32,11 +32,18 @@ evince/
 ├── main.py                 # 🚀 CLI entry point
 ├── README.md               # Documentation
 ├── .env.example            # Environment template
-├── metrics_visualizer.py   # Metrics plotting
+├── requirements.txt        # Dependencies
 │
 ├── data/                   # 📊 Data directory
 │   ├── raw_ocr_annual_report.zip  # Raw OCR text files
-│   └── semantic_chunks.csv        # Processed chunks
+│   ├── all_chunks.csv             # Processed chunks
+│   └── labeled.csv                # LLM-labeled data
+│
+├── core/                   # 🔧 Core utilities
+│   ├── config.py           # Configuration
+│   ├── gemini_client.py    # Google Gemini LLM
+│   ├── bedrock_client.py   # AWS Bedrock LLM
+│   └── qwen_client.py      # Qwen3 LLM
 │
 ├── models/                 # 🧠 Classification models
 │   ├── esg_topic_classifier.py    # ESG 6-class classifier (512 tokens)
@@ -47,7 +54,7 @@ evince/
 │   └── data_loader.py      # Dataset & DataLoader (512 tokens)
 ├── evaluation/             # 📈 Metrics
 └── scripts/                # 📜 Utility scripts
-    ├── llm_labeling.py     # LLM-based pseudo-labeling
+    ├── llm_labeling.py     # LLM-based pseudo-labeling (multi-threaded)
     └── process_ocr_semantic.py  # Smart OCR processing
 ```
 
@@ -61,56 +68,78 @@ evince/
 git clone https://github.com/Huypham07/evince.git
 cd evince
 
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# or: venv\Scripts\activate  # Windows
+
 # Install dependencies
-pip install torch transformers pandas tqdm python-dotenv requests scikit-learn
+pip install -r requirements.txt
 
 # Setup env
 cp .env.example .env
+# Edit .env với API keys của bạn
 ```
 
-### 2. Process Raw OCR Data → Semantic Chunks
+### 2. Process Raw OCR → Semantic Chunks
 
-Nếu bạn có file raw OCR (txt/zip), sử dụng **semantic chunking** để chia thành các đoạn có nghĩa:
+Xử lý raw OCR files thành semantic chunks với token limit:
 
 ```bash
 # Xử lý file đơn
 python main.py process --input data/bctn_2024_raw.txt --output data/chunks.csv
 
-# Xử lý zip chứa nhiều file
+# Xử lý zip chứa nhiều file (ví dụ: 11 banks × 5 years)
 python main.py process --input data/raw_ocr_annual_report.zip --output data/all_chunks.csv
 ```
 
-**Output CSV sẽ có các cột:**
-- `text`: Nội dung chunk (đảm bảo ≤500 tokens)
-- `section`: Tên section (từ markdown headers `##`)
-- `chunk_type`: `paragraph` hoặc `table`
-- `bank`, `year`, `report_type`: Metadata từ filename
-- `token_count`: Số token thực tế (đếm bằng PhoBERT tokenizer)
-
-> 💡 **Tính năng**: Script sử dụng PhoBERT tokenizer để đếm token chính xác và tự động chia chunk nếu vượt 500 tokens.
-
-### 3. Classify ESG Topics
-
-```bash
-# Classify từ file chunks
-python main.py classify --input data/chunks.csv --output data/classified.csv
-
-# Classify single text
-python main.py classify --text "Ngân hàng cam kết giảm 30% phát thải carbon vào năm 2030"
+**Output:**
+```
+📊 Statistics:
+  Total chunks: 30604
+  Paragraph chunks: 18266
+  Table chunks: 12338
+  Average token count: 160
+  Banks: ['vib', 'viettinbank', 'mbbank', 'shb', 'bsc', 'vietcombank', ...]
+  Years: [2015, 2017, 2018, 2020, 2021, 2022, 2023, 2024]
 ```
 
-### 4. Generate Labels with LLM (Optional)
+### 3. Generate Labels with LLM
 
-Nếu chưa có dữ liệu gán nhãn, sử dụng LLM để tạo nhãn tự động:
+Tạo training labels với LLM (Gemini/Bedrock/Qwen):
 
 ```bash
-# Cấu hình Qwen/Gemini trong .env trước
-python main.py label --input data/chunks.csv --output data/labeled.csv --sample 2000
+# Cấu hình trong .env:
+# LLM_PROVIDER=gemini
+# GOOGLE_API_KEY=your_api_key
+
+# Label toàn bộ dataset (multi-threaded)
+python main.py label -i data/all_chunks.csv -o data/labeled.csv --workers 4
+
+# Hoặc sample nhỏ để test
+python main.py label -i data/all_chunks.csv -o data/labeled.csv --sample 100
 ```
 
-### 5. Train Model 🏋️
+**Output:**
+```
+=== Label Distribution ===
 
-Bạn có thể train lại model trên dữ liệu của mình:
+ESG Topics:
+  Non-ESG: 18836 (61.7%)
+  G: 7588 (24.8%)
+  S: 2726 (8.9%)
+  Financing: 688 (2.3%)
+  E: 399 (1.3%)
+  Policy: 310 (1.0%)
+
+Washing Types:
+  NOT_WASHING: 26452 (86.6%)
+  VAGUE_COMMITMENT: 2383 (7.8%)
+  SYMBOLIC_ACTION: 787 (2.6%)
+  FUTURE_DEFLECTION: 530 (1.7%)
+```
+
+### 4. Train Custom Models 🏋️
 
 **Train ESG Topic Classifier:**
 ```bash
@@ -118,6 +147,7 @@ python main.py train \
     --model-type esg \
     --input data/labeled.csv \
     --epochs 5 \
+    --batch-size 16 \
     --output-dir ./checkpoints/esg
 ```
 
@@ -127,20 +157,39 @@ python main.py train \
     --model-type washing \
     --input data/labeled.csv \
     --epochs 10 \
+    --batch-size 16 \
     --output-dir ./checkpoints/washing
 ```
 
-> 📝 **Note**: Models mặc định sử dụng `max_length=512` và `freeze_bert_layers=0` (full fine-tuning) để hiểu tốt ngữ cảnh đoạn văn.
+**Training Options:**
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--model-type` | required | `esg` or `washing` |
+| `--epochs` | 5 | Number of epochs |
+| `--batch-size` | 16 | Batch size |
+| `--learning-rate` | 2e-5 | Learning rate |
+| `--max-length` | 512 | Max token length |
+| `--val-split` | 0.1 | Validation split |
+| `--freeze-layers` | 0 | BERT layers to freeze |
+| `--device` | auto | cpu/cuda/auto |
 
-### 6. Document Analysis (Detection) 🔍
-
-Phân tích tài liệu để tìm ESG-washing và **xem bằng chứng cụ thể**:
+### 5. Classify ESG Topics
 
 ```bash
-python main.py analyze --input data/classified.csv --bank agribank --year 2024 --verbose
+# Classify từ file
+python main.py classify --input data/chunks.csv --output data/classified.csv
+
+# Classify single text
+python main.py classify --text "Ngân hàng cam kết giảm 30% phát thải carbon vào năm 2030"
 ```
 
-**Output mẫu:**
+### 6. Document Analysis (Washing Detection) 🔍
+
+```bash
+python main.py analyze --input data/classified.csv --bank agribank --year 2024
+```
+
+**Output:**
 ```
 ============================================================
 DOCUMENT ANALYSIS RESULT
@@ -148,37 +197,29 @@ DOCUMENT ANALYSIS RESULT
 Bank: agribank | Year: 2024
 Document Washing Index: 0.412
 High Risk Claims: 5
-...
-⚠️  HIGH RISK CLAIMS DETECTED (Washing Evidence):
-────────────────────────────────────────────────────────────
 
+⚠️  HIGH RISK CLAIMS DETECTED:
+────────────────────────────────────────────────────────────
 [1] Claim: "Ngân hàng cam kết đạt Net Zero vào năm 2050"
     Risk Level: HIGH
     Verification Score: 0.120
-    Evidence Found:
-      (No relevant evidence found)
-
-[2] Claim: "Chúng tôi luôn hỗ trợ cộng đồng bị ảnh hưởng thiên tai"
-    Risk Level: MEDIUM
-    Verification Score: 0.450
-    Evidence Found:
-      - [0.48] Ngân hàng đã quyên góp 5 tỷ đồng cho quỹ cứu trợ miền Trung.
+    Evidence Found: (No relevant evidence found)
 ```
 
 ---
 
-## 📊 ESG Labels
+## 📊 Label Definitions
 
 ### ESG Topic Classification (6 classes)
 
-| Label | Description | Vietnamese |
-|-------|-------------|------------|
-| `Environmental_Performance` | Môi trường, khí hậu, năng lượng | Hiệu quả môi trường |
-| `Social_Performance` | Nhân viên, cộng đồng, xã hội | Hiệu quả xã hội |
-| `Governance_Performance` | Quản trị, đạo đức, tuân thủ | Hiệu quả quản trị |
-| `ESG_Financing` | Tín dụng xanh, trái phiếu ESG | Tài chính ESG |
-| `Strategy_and_Policy` | Chiến lược, chính sách ESG | Chiến lược & Chính sách |
-| `Not_ESG_Related` | Không liên quan ESG | Không liên quan |
+| Label | Code | Description |
+|-------|------|-------------|
+| Environmental | `E` | Môi trường, khí hậu, năng lượng, carbon |
+| Social | `S` | Nhân viên, cộng đồng, sức khỏe, đào tạo |
+| Governance | `G` | Quản trị, đạo đức, tuân thủ, rủi ro |
+| ESG Financing | `Financing` | Tín dụng xanh, trái phiếu ESG |
+| Policy | `Policy` | Chiến lược, chính sách ESG |
+| Non-ESG | `Non-ESG` | Không liên quan ESG |
 
 ### Washing Types (7 classes)
 
@@ -194,111 +235,122 @@ High Risk Claims: 5
 
 ---
 
-## 🐍 Python API
-
-### ESG Classification
-
-```python
-from evince.models import HuggingFaceESGClassifierInference
-
-# Load pre-trained model from HuggingFace
-classifier = HuggingFaceESGClassifierInference()
-
-# Single prediction (supports up to 512 tokens)
-result = classifier.predict("Ngân hàng cam kết giảm phát thải carbon 30% vào năm 2030")
-print(f"Label: {result.predicted_label}")
-print(f"Confidence: {result.confidence:.2%}")
-
-# Batch prediction
-results = classifier.predict_batch(["Đoạn văn 1", "Đoạn văn 2", "Đoạn văn 3"])
-```
-
-### Document Analysis
-
-```python
-from evince.claim_evidence import DocumentAnalyzer
-
-analyzer = DocumentAnalyzer(device="cuda")
-
-result = analyzer.analyze_document(
-    sentences=["Cam kết 1", "Bằng chứng 1", "Cam kết 2"],
-    bank="agribank",
-    year=2024
-)
-
-print(f"Washing Index: {result.document_washing_index:.3f}")
-print(f"High Risk Claims: {result.high_risk_claims}")
-```
-
-### Process Raw OCR
-
-```python
-from evince.scripts.process_ocr_semantic import process_single_file, chunks_to_csv
-
-# Process raw OCR file
-chunks = process_single_file("data/bctn_2024_raw.txt")
-
-# Save to CSV
-chunks_to_csv(chunks, "data/chunks.csv")
-
-# Each chunk has:
-# - text (≤500 tokens)
-# - section, chunk_type
-# - bank, year, report_type
-# - token_count
-```
-
----
-
 ## 🔧 Configuration
 
 ### Environment Variables (.env)
 
 ```env
-# Qwen3 LLM (for pseudo-labeling)
+# ==============================================================================
+# LLM PROVIDER SELECTION
+# Options: "gemini", "bedrock", "qwen"
+# ==============================================================================
+LLM_PROVIDER=gemini
+
+# ==============================================================================
+# GOOGLE GEMINI (recommended)
+# ==============================================================================
+GOOGLE_API_KEY=your_api_key_here
+GEMINI_MODEL=gemini-2.5-flash-lite
+
+# ==============================================================================
+# AWS BEDROCK (alternative)
+# ==============================================================================
+AWS_BEDROCK_REGION=us-east-1
+BEDROCK_MODEL=claude-3.7-sonnet
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+
+# ==============================================================================
+# QWEN3 (self-hosted)
+# ==============================================================================
 QWEN_BASE_URL=http://your-server:8000/v1/chat/completions
-QWEN_AUTH_USERNAME=your_username
-QWEN_AUTH_PASSWORD=your_password
-QWEN_MODEL=Qwen3-14B
-
-# Optional: Google Gemini
-GOOGLE_API_KEY=your_api_key
+QWEN_AUTH_USERNAME=username
+QWEN_AUTH_PASSWORD=password
 ```
-
----
-
-## 📚 Pre-trained Models
-
-| Model | HuggingFace Hub | Max Tokens | Description |
-|-------|-----------------|------------|-------------|
-| ESG Classifier | `huypham71/esgify_vn_class_weights` | 512 | 6-class ESG topic classifier |
 
 ---
 
 ## 🔄 Complete Workflow
 
 ```bash
-# 1. Process raw OCR → semantic chunks (with token limit)
-python main.py process -i data/bctn_2024_raw.txt -o data/chunks.csv
+# 1. Process raw OCR → semantic chunks
+python main.py process -i data/raw_ocr_annual_report.zip -o data/all_chunks.csv
 
-# 2. Classify ESG topics
-python main.py classify -i data/chunks.csv -o data/classified.csv
+# 2. Generate labels with LLM (multi-threaded)
+python main.py label -i data/all_chunks.csv -o data/labeled.csv -w 4
 
-# 3. (Optional) Generate labels for training
-python main.py label -i data/chunks.csv -o data/labeled.csv --sample 500
-
-# 4. (Optional) Train custom model
+# 3. Train ESG classifier
 python main.py train --model-type esg --input data/labeled.csv --epochs 5
 
-# 5. Analyze for washing detection
-python main.py analyze -i data/classified.csv --bank agribank --year 2024
+# 4. Train Washing detector
+python main.py train --model-type washing --input data/labeled.csv --epochs 10
+
+# 5. Classify new documents
+python main.py classify -i new_data.csv -o classified.csv
+
+# 6. Analyze for washing
+python main.py analyze -i classified.csv --bank bidv --year 2024
 ```
+
+---
+
+## 🐍 Python API
+
+### ESG Classification
+
+```python
+from models import HuggingFaceESGClassifierInference
+
+# Load pre-trained model
+classifier = HuggingFaceESGClassifierInference()
+
+# Predict
+result = classifier.predict("Ngân hàng cam kết giảm phát thải carbon")
+print(f"Label: {result.predicted_label}, Confidence: {result.confidence:.2%}")
+
+# Batch prediction
+results = classifier.predict_batch(["Text 1", "Text 2", "Text 3"])
+```
+
+### Document Analysis
+
+```python
+from claim_evidence import DocumentAnalyzer
+
+analyzer = DocumentAnalyzer(device="cuda")
+result = analyzer.analyze_document(sentences, bank="agribank", year=2024)
+
+print(f"Washing Index: {result.document_washing_index:.3f}")
+print(f"High Risk Claims: {result.high_risk_claims}")
+```
+
+### LLM Clients
+
+```python
+from core import GeminiClient, BedrockClient
+
+# Gemini
+client = GeminiClient()
+result = client.generate_content("Classify this text...")
+
+# AWS Bedrock
+client = BedrockClient(region="us-east-1", model_id="claude-3.7-sonnet")
+result = client.generate_content("Classify this text...")
+```
+
+---
+
+## 📚 Pre-trained Models
+
+| Model | HuggingFace Hub | Description |
+|-------|-----------------|-------------|
+| ESG Classifier | `huypham71/esgify_vn_class_weights` | 6-class ESG topic classifier |
 
 ---
 
 ## 📖 References
 
-- **PhoBERT**: Nguyen & Tuan Nguyen (2020). PhoBERT: Pre-trained language models for Vietnamese.
+- **PhoBERT**: Nguyen & Tuan Nguyen (2020). Pre-trained language models for Vietnamese.
 - **ESGBERT**: Schimanski et al. (2024). ClimateBERT-based ESG classification.
 - **A3CG Dataset**: Ong et al. (2025). Asian Anti-Greenwashing Claim-Context dataset.
 
