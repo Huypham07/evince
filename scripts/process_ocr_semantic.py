@@ -354,16 +354,50 @@ def process_zip_file(zip_path: str) -> List[SemanticChunk]:
     
     with zipfile.ZipFile(zip_path, 'r') as zf:
         for file_info in zf.infolist():
-            if file_info.filename.endswith('.txt') and not file_info.is_dir():
-                print(f"  Processing: {file_info.filename}")
-                
+            # Skip directories
+            if file_info.is_dir():
+                continue
+            
+            # Skip non-txt files
+            if not file_info.filename.endswith('.txt'):
+                continue
+            
+            # Skip Mac OS X resource fork files
+            if '__MACOSX' in file_info.filename or file_info.filename.startswith('._'):
+                continue
+            
+            # Skip hidden files
+            if '/._' in file_info.filename:
+                continue
+            
+            print(f"  Processing: {file_info.filename}")
+            
+            try:
                 with zf.open(file_info.filename) as f:
-                    content = f.read().decode('utf-8')
+                    raw_content = f.read()
+                    
+                    # Try different encodings
+                    content = None
+                    for encoding in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']:
+                        try:
+                            content = raw_content.decode(encoding)
+                            break
+                        except UnicodeDecodeError:
+                            continue
+                    
+                    if content is None:
+                        print(f"    ⚠ Skipping: Unable to decode file with any encoding")
+                        continue
+                    
                     lines = content.split('\n')
                 
                 chunks = create_semantic_chunks(lines, file_info.filename)
                 all_chunks.extend(chunks)
                 print(f"    -> {len(chunks)} chunks extracted")
+                
+            except Exception as e:
+                print(f"    ⚠ Error processing file: {e}")
+                continue
     
     return all_chunks
 

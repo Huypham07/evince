@@ -13,6 +13,8 @@ scikit-learn>=1.0.0
 # LLM Integration
 requests>=2.28.0
 python-dotenv>=1.0.0
+google-genai>=1.0.0        # Gemini (new package)
+boto3>=1.28.0               # AWS Bedrock
 
 # Optional: for Jupyter notebooks
 # jupyter>=1.0.0

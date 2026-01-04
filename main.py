@@ -197,7 +197,8 @@ def generate_labels(args):
         input_path=args.input,
         output_path=output,
         sample_size=args.sample,
-        resume=not args.no_resume
+        resume=not args.no_resume,
+        workers=args.workers
     )
 
 
@@ -276,7 +277,8 @@ Examples:
     label_parser = subparsers.add_parser("label", help="Generate labels with LLM")
     label_parser.add_argument("-i", "--input", type=str, required=True, help="Input CSV file")
     label_parser.add_argument("-o", "--output", type=str, help="Output CSV file")
-    label_parser.add_argument("--sample", type=int, default=1000, help="Number of samples")
+    label_parser.add_argument("--sample", type=int, default=None, help="Number of samples (default: all)")
+    label_parser.add_argument("--workers", "-w", type=int, default=1, help="Number of parallel workers")
     label_parser.add_argument("--no-resume", action="store_true", help="Don't resume from previous run")
     
     # Interactive command
