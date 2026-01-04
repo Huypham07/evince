@@ -178,6 +178,10 @@ class ESGTopicClassifier(nn.Module):
         # to avoid cached buffer size mismatch
         batch_size, seq_len = input_ids.shape
         
+        # Clamp input_ids to valid vocab range to prevent CUDA errors
+        vocab_size = self.encoder.config.vocab_size
+        input_ids = torch.clamp(input_ids, min=0, max=vocab_size - 1)
+        
         # Create proper token_type_ids (all zeros for RoBERTa)
         token_type_ids = torch.zeros_like(input_ids)
         

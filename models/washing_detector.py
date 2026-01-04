@@ -197,6 +197,11 @@ class WashingDetector(nn.Module):
         """
         # For RoBERTa/PhoBERT, we need to handle token_type_ids carefully
         # to avoid cached buffer size mismatch
+        
+        # Clamp input_ids to valid vocab range to prevent CUDA errors
+        vocab_size = self.encoder.config.vocab_size
+        input_ids = torch.clamp(input_ids, min=0, max=vocab_size - 1)
+        
         token_type_ids = torch.zeros_like(input_ids)
         
         # Get BERT output
