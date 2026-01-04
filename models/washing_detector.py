@@ -195,10 +195,15 @@ class WashingDetector(nn.Module):
             logits: Classification logits, shape (batch, num_classes)
             attn_weights: Attention weights, shape (batch, seq_len, seq_len)
         """
+        # For RoBERTa/PhoBERT, we need to handle token_type_ids carefully
+        # to avoid cached buffer size mismatch
+        token_type_ids = torch.zeros_like(input_ids)
+        
         # Get BERT output
         outputs = self.encoder(
             input_ids=input_ids,
-            attention_mask=attention_mask
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids
         )
         hidden_states = outputs.last_hidden_state  # (batch, seq_len, hidden_size)
         

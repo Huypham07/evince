@@ -174,10 +174,18 @@ class ESGTopicClassifier(nn.Module):
         Returns:
             Logits, shape (batch, num_classes)
         """
+        # For RoBERTa/PhoBERT, we need to handle token_type_ids carefully
+        # to avoid cached buffer size mismatch
+        batch_size, seq_len = input_ids.shape
+        
+        # Create proper token_type_ids (all zeros for RoBERTa)
+        token_type_ids = torch.zeros_like(input_ids)
+        
         # Get BERT output
         outputs = self.encoder(
             input_ids=input_ids,
-            attention_mask=attention_mask
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids
         )
         
         # Use [CLS] token representation
