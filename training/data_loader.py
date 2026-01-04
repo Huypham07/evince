@@ -27,7 +27,8 @@ except ImportError:
 
 
 # Maximum sequence length for paragraph-level input
-MAX_SEQ_LENGTH = 512
+# PhoBERT has max_position_embeddings=258, so we use 256 for safety
+MAX_SEQ_LENGTH = 256
 
 
 @dataclass

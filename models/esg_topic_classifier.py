@@ -34,7 +34,8 @@ except ImportError:
 HUGGINGFACE_ESG_MODEL = "huypham71/esgify_vn_class_weights"
 
 # Maximum sequence length for paragraph-level input
-MAX_SEQ_LENGTH = 512
+# PhoBERT has max_position_embeddings=258, so we use 256
+MAX_SEQ_LENGTH = 256
 
 # ESG Topic Labels (matching HuggingFace model)
 ESG_LABELS = [
