@@ -433,7 +433,7 @@ Examples:
     train_parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
     train_parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
     train_parser.add_argument("--learning-rate", type=float, default=2e-5, help="Learning rate")
-    train_parser.add_argument("--max-length", type=int, default=512, help="Max token length")
+    train_parser.add_argument("--max-length", type=int, default=256, help="Max token length (PhoBERT max=256)")
     train_parser.add_argument("--val-split", type=float, default=0.1, help="Validation split ratio")
     train_parser.add_argument("--freeze-layers", type=int, default=0, help="Number of BERT layers to freeze")
     train_parser.add_argument("--device", type=str, default="auto", help="Device: cpu, cuda, auto")
