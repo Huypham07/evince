@@ -243,23 +243,44 @@ def train_model(args):
     
     if args.model_type == "esg":
         # ESG Topic Classification
-        from models import ESGTopicClassifier, LABEL_TO_ID
+        from models import ESGTopicClassifier, LABEL_TO_ID, ESG_LABELS
         
-        # Filter to valid labels
-        valid_labels = list(LABEL_TO_ID.keys())
-        df = df[df['esg_label'].isin(valid_labels)].reset_index(drop=True)
+        # Map short labels to full labels
+        label_mapping_short_to_full = {
+            'E': 'Environmental_Performance',
+            'S': 'Social_Performance',
+            'G': 'Governance_Performance',
+            'Financing': 'ESG_Financing',
+            'Policy': 'Strategy_and_Policy',
+            'Non-ESG': 'Not_ESG_Related',
+            # Also support full names
+            'Environmental_Performance': 'Environmental_Performance',
+            'Social_Performance': 'Social_Performance',
+            'Governance_Performance': 'Governance_Performance',
+            'ESG_Financing': 'ESG_Financing',
+            'Strategy_and_Policy': 'Strategy_and_Policy',
+            'Not_ESG_Related': 'Not_ESG_Related',
+        }
+        
+        # Filter and map labels
+        df = df[df['esg_label'].notna()].reset_index(drop=True)
+        df['esg_label_mapped'] = df['esg_label'].map(label_mapping_short_to_full)
+        df = df[df['esg_label_mapped'].notna()].reset_index(drop=True)
         
         print(f"✓ Loaded {len(df)} samples for ESG classification")
         print(f"  Label distribution:")
         for label, count in df['esg_label'].value_counts().items():
             print(f"    {label}: {count}")
         
+        # Convert labels to integers
+        labels_int = [LABEL_TO_ID[label] for label in df['esg_label_mapped'].tolist()]
+        
         # Create dataset
         dataset = ESGDataset(
-            texts=df[text_col].tolist(),
-            labels=df['esg_label'].tolist(),
-            label_mapping=LABEL_TO_ID,
-            max_length=args.max_length
+            sentences=df[text_col].tolist(),
+            labels=labels_int,
+            max_length=args.max_length,
+            task="esg_topic"
         )
         
         # Create model
@@ -273,25 +294,34 @@ def train_model(args):
         
         # Filter Non-ESG samples (they shouldn't be in washing training)
         df = df[df['esg_label'] != 'Non-ESG'].reset_index(drop=True)
+        df = df[df['esg_label'] != 'Not_ESG_Related'].reset_index(drop=True)
         df = df[df['washing_type'].notna()].reset_index(drop=True)
+        df = df[df['washing_type'].isin(WASHING_LABELS)].reset_index(drop=True)
         
         print(f"✓ Loaded {len(df)} samples for Washing detection")
         print(f"  Washing distribution:")
         for label, count in df['washing_type'].value_counts().items():
             print(f"    {label}: {count}")
         
+        # Convert labels to integers
+        labels_int = [WASHING_TO_ID[label] for label in df['washing_type'].tolist()]
+        
         # Create dataset
         dataset = ESGDataset(
-            texts=df[text_col].tolist(),
-            labels=df['washing_type'].tolist(),
-            label_mapping=WASHING_TO_ID,
-            max_length=args.max_length
+            sentences=df[text_col].tolist(),
+            labels=labels_int,
+            max_length=args.max_length,
+            task="washing"
         )
         
         # Create model
         model = WashingDetector(freeze_bert_layers=args.freeze_layers)
     else:
         print(f"Error: Unknown model type '{args.model_type}'. Use 'esg' or 'washing'.")
+        return
+    
+    if len(dataset) == 0:
+        print("Error: No valid samples found for training!")
         return
     
     # Split data
