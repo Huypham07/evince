@@ -49,7 +49,8 @@ class Trainer:
         warmup_ratio: float = 0.1,
         gradient_accumulation_steps: int = 1,
         device: str = "auto",
-        output_dir: str = "./checkpoints"
+        output_dir: str = "./checkpoints",
+        class_weights: Optional[torch.Tensor] = None
     ):
         """
         Initialize trainer.
@@ -65,6 +66,7 @@ class Trainer:
             gradient_accumulation_steps: Gradient accumulation steps
             device: Training device
             output_dir: Directory for checkpoints
+            class_weights: Optional class weights for imbalanced datasets
         """
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -109,8 +111,13 @@ class Trainer:
         else:
             self.scheduler = None
         
-        # Loss function (default: CrossEntropy)
-        self.criterion = nn.CrossEntropyLoss()
+        # Loss function with optional class weights
+        if class_weights is not None:
+            class_weights = class_weights.to(self.device)
+            self.criterion = nn.CrossEntropyLoss(weight=class_weights)
+            logger.info(f"Using weighted CrossEntropyLoss")
+        else:
+            self.criterion = nn.CrossEntropyLoss()
         
         # Tracking
         self.best_val_acc = 0.0

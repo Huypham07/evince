@@ -267,10 +267,60 @@ def train_model(args):
         df['esg_label_mapped'] = df['esg_label'].map(label_mapping_short_to_full)
         df = df[df['esg_label_mapped'].notna()].reset_index(drop=True)
         
-        print(f"✓ Loaded {len(df)} samples for ESG classification")
-        print(f"  Label distribution:")
+        print(f"\n📊 Original Label Distribution:")
         for label, count in df['esg_label'].value_counts().items():
             print(f"    {label}: {count}")
+        
+        # Balanced Sampling Strategy:
+        # 1. Undersample Non-ESG to match the second largest class (G)
+        # 2. Keep all minority class samples
+        # 3. Apply class weights for remaining imbalance
+        
+        label_counts = df['esg_label'].value_counts()
+        second_largest = label_counts.iloc[1] if len(label_counts) > 1 else label_counts.iloc[0]
+        max_non_esg = int(second_largest)  # Non-ESG capped at same as second largest
+        
+        print(f"\n⚖️ Balancing Strategy:")
+        print(f"  Second largest class: {label_counts.index[1]} = {second_largest}")
+        print(f"  Non-ESG capped at: {max_non_esg}")
+        
+        # Split into Non-ESG and ESG samples
+        df_non_esg = df[df['esg_label'] == 'Non-ESG']
+        df_esg = df[df['esg_label'] != 'Non-ESG']
+        
+        # Undersample Non-ESG
+        if len(df_non_esg) > max_non_esg:
+            df_non_esg = df_non_esg.sample(n=max_non_esg, random_state=42)
+            print(f"  Undersampled Non-ESG: {len(df_non_esg)} samples")
+        
+        # Combine
+        df = pd.concat([df_esg, df_non_esg], ignore_index=True)
+        df = df.sample(frac=1, random_state=42).reset_index(drop=True)  # Shuffle
+        
+        print(f"\n✓ Balanced Dataset: {len(df)} samples")
+        print(f"  New distribution:")
+        for label, count in df['esg_label'].value_counts().items():
+            print(f"    {label}: {count}")
+        
+        # Calculate class weights for remaining imbalance
+        label_counts_balanced = df['esg_label_mapped'].value_counts()
+        total_samples = len(df)
+        num_classes = len(ESG_LABELS)
+        
+        class_weights = {}
+        for label in ESG_LABELS:
+            count = label_counts_balanced.get(label, 1)
+            # Inversely proportional to frequency
+            class_weights[LABEL_TO_ID[label]] = total_samples / (num_classes * count)
+        
+        print(f"\n📊 Class Weights:")
+        for label in ESG_LABELS:
+            label_id = LABEL_TO_ID[label]
+            short_label = label.replace('_Performance', '').replace('_Related', '')
+            print(f"    {short_label}: {class_weights[label_id]:.2f}")
+        
+        # Convert to tensor for loss function
+        weight_tensor = torch.tensor([class_weights[i] for i in range(num_classes)], dtype=torch.float)
         
         # Convert labels to integers
         labels_int = [LABEL_TO_ID[label] for label in df['esg_label_mapped'].tolist()]
@@ -393,6 +443,9 @@ def train_model(args):
     # Train
     print(f"\n🏋️ Training for {args.epochs} epochs...")
     
+    # Get class weights if defined (only for ESG classification with balancing)
+    weights = weight_tensor if 'weight_tensor' in dir() else None
+    
     trainer = Trainer(
         model=model,
         train_loader=train_loader,
@@ -400,7 +453,8 @@ def train_model(args):
         learning_rate=args.learning_rate,
         num_epochs=args.epochs,
         output_dir=args.output_dir,
-        device=args.device
+        device=args.device,
+        class_weights=weights
     )
     
     trainer.train()
